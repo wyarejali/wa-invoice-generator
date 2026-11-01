@@ -48,6 +48,23 @@ export function uid() {
   })
 }
 
+/**
+ * Coerce whatever is in a timestamp field into an ISO string.
+ *
+ * Postgres `timestamptz` rejects a millisecond epoch number — it reads
+ * 1792171727386 as a year — so a stored invoice carrying a raw `Date.now()`
+ * from an older build would fail every sync until it is repaired. Everything
+ * entering the app goes through `normalizeInvoice`, so fixing it here fixes
+ * local data, imported JSON and cloud rows at once.
+ */
+export function isoTimestamp(value, fallback) {
+  if (value instanceof Date || typeof value === 'number' || typeof value === 'string') {
+    const date = new Date(value)
+    if (!Number.isNaN(date.getTime())) return date.toISOString()
+  }
+  return fallback ?? new Date().toISOString()
+}
+
 export function todayISO() {
   const d = new Date()
   const off = d.getTimezoneOffset()
@@ -210,8 +227,8 @@ export function normalizeInvoice(raw = {}) {
     adjustments,
     note: raw.note ?? base.note,
     terms: raw.terms ?? base.terms,
-    createdAt: raw.createdAt || base.createdAt,
-    updatedAt: raw.updatedAt || base.updatedAt,
+    createdAt: isoTimestamp(raw.createdAt, base.createdAt),
+    updatedAt: isoTimestamp(raw.updatedAt, base.updatedAt),
   }
 }
 

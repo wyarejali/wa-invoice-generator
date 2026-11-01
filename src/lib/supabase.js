@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { isoTimestamp } from './invoice'
 
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -46,8 +47,8 @@ export function toRow(invoice, userId) {
     user_id: userId,
     number: invoice.number,
     data: invoice,
-    created_at: invoice.createdAt,
-    updated_at: invoice.updatedAt,
+    created_at: isoTimestamp(invoice.createdAt),
+    updated_at: isoTimestamp(invoice.updatedAt),
   }
 }
 

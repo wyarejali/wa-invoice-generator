@@ -21,9 +21,10 @@ npm run dev          # http://localhost:5173
 | `/i/:id` | The editor for one invoice. |
 
 Deep links are client-side routes, so a static host needs a rewrite of every
-unknown path to `index.html` (Netlify `_redirects`, Vercel `rewrites`, or
-`try_files $uri /index.html` on nginx). `vite dev` and `vite preview` already
-do this.
+unknown path to `index.html`, or signing in lands on the host's own 404
+instead of `/app`. `vercel.json` in the repo root does this for Vercel; on
+Netlify use `_redirects`, on nginx `try_files $uri /index.html`. `vite dev`
+and `vite preview` already do it.
 
 ## Layout
 

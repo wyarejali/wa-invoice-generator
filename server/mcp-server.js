@@ -17,6 +17,9 @@ import cors from 'cors'
 import 'dotenv/config'
 import { z } from 'zod'
 import { createClient } from '@supabase/supabase-js'
+// The app's own money rules, so a total reported here can never drift from the
+// one shown on the invoice.
+import { computeTotals, normalizeInvoice } from '../src/lib/invoice.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 
@@ -51,13 +54,33 @@ setInterval(() => {
   for (const [code, rec] of codes) if (rec.exp < now) codes.delete(code)
 }, 60_000).unref()
 
+/**
+ * Serialize for embedding inside a <script> block.
+ *
+ * JSON.stringify leaves `<` alone, so a `state` of `</script><img onerror=…>`
+ * would close the tag and run as markup. This origin holds the user's Supabase
+ * session, so that is account takeover, not a defacement.
+ */
+function jsonForScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+}
+
 const b64url = (buf) => buf.toString('base64url')
 const randomId = () => b64url(crypto.randomBytes(24))
 
+/**
+ * Every client here is public (`token_endpoint_auth_method: 'none'`), so PKCE
+ * is the only thing tying an authorization code to whoever requested it.
+ * S256 is required — a missing or `plain` challenge is a failed check, not a
+ * client that opted out.
+ */
 function verifyPkce(verifier, challenge, method) {
-  if (!challenge) return true // client did not use PKCE
-  if (!verifier) return false
-  if (method === 'plain') return verifier === challenge
+  if (!challenge || !verifier || method !== 'S256') return false
   return b64url(crypto.createHash('sha256').update(verifier).digest()) === challenge
 }
 
@@ -87,7 +110,7 @@ app.get(
       registration_endpoint: `${PUBLIC_URL}/oauth/register`,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
-      code_challenge_methods_supported: ['S256', 'plain'],
+      code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       scopes_supported: ['invoices:read', 'invoices:write'],
     })
@@ -137,8 +160,11 @@ app.get('/oauth/authorize', (req, res) => {
   if (!client.redirect_uris.includes(redirect_uri)) {
     return res.status(400).send('redirect_uri is not registered for this client.')
   }
+  if (!code_challenge || code_challenge_method !== 'S256') {
+    return res.status(400).send('A PKCE code_challenge using S256 is required.')
+  }
 
-  const ctx = JSON.stringify({
+  const ctx = {
     client_id,
     client_name: client.client_name,
     redirect_uri,
@@ -146,7 +172,7 @@ app.get('/oauth/authorize', (req, res) => {
     code_challenge,
     code_challenge_method,
     scope,
-  })
+  }
 
   res.type('html').send(`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -173,8 +199,8 @@ app.get('/oauth/authorize', (req, res) => {
 </div>
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-const ctx = ${ctx}
-const supabase = createClient(${JSON.stringify(SUPABASE_URL)}, ${JSON.stringify(SUPABASE_ANON_KEY)})
+const ctx = ${jsonForScript(ctx)}
+const supabase = createClient(${jsonForScript(SUPABASE_URL)}, ${jsonForScript(SUPABASE_ANON_KEY)})
 const body = document.getElementById('body')
 
 const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))
@@ -363,7 +389,7 @@ function buildServer({ user, db }) {
           number: r.number,
           date: r.data?.date,
           status: r.data?.status,
-          total: (r.data?.items || []).reduce((s, i) => s + (parseFloat(i.amount) || 0), 0),
+          total: computeTotals(normalizeInvoice(r.data || {})).total,
           updated_at: r.updated_at,
         }))
       return text({ count: rows.length, invoices: rows })
@@ -383,7 +409,10 @@ function buildServer({ user, db }) {
     async ({ id, number }) => {
       if (!id && !number) return fail('Provide either id or number.')
       let query = db.from('invoices').select('*')
-      query = id ? query.eq('id', id) : query.ilike('number', number.startsWith('#') ? number : `#${number}`)
+      // `*` and `%` are PostgREST's ilike wildcards; a lookup by number is an
+      // exact match, so the input must not be able to become a pattern.
+      const wanted = id ? null : (number.startsWith('#') ? number : `#${number}`).replace(/[*%]/g, '')
+      query = id ? query.eq('id', id) : query.ilike('number', wanted)
       const { data, error } = await query.limit(1)
       if (error) return fail(error.message)
       if (!data?.length) return fail('No matching invoice.')
@@ -471,7 +500,10 @@ function buildServer({ user, db }) {
     async ({ id, number }) => {
       if (!id && !number) return fail('Provide either id or number.')
       let query = db.from('invoices').delete()
-      query = id ? query.eq('id', id) : query.ilike('number', number.startsWith('#') ? number : `#${number}`)
+      // `*` and `%` are PostgREST's ilike wildcards; a lookup by number is an
+      // exact match, so the input must not be able to become a pattern.
+      const wanted = id ? null : (number.startsWith('#') ? number : `#${number}`).replace(/[*%]/g, '')
+      query = id ? query.eq('id', id) : query.ilike('number', wanted)
       const { data, error } = await query.select('id, number')
       if (error) return fail(error.message)
       if (!data?.length) return fail('No matching invoice.')

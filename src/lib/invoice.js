@@ -71,6 +71,18 @@ export function todayISO() {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10)
 }
 
+/** "2026-10-16" -> "16 Oct 2026". Compact enough for a list row. */
+export function formatDay(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
 /** "2026-09-04" -> "260904" */
 function ymd(dateISO) {
   const [y, m, d] = (dateISO || todayISO()).split('-')
@@ -94,8 +106,8 @@ export function emptyLine() {
   return { id: uid(), description: '', detail: '', qty: '', rate: '', amount: '' }
 }
 
-/** Optional columns and rows, toggled from the properties panel. */
-export const DEFAULT_OPTIONS = { itemDetail: false, quantity: false }
+/** Optional columns, rows and blocks, toggled from the properties panel. */
+export const DEFAULT_OPTIONS = { itemDetail: false, quantity: false, amountDue: true }
 
 /**
  * A fresh draft. `carry` holds what a new invoice should inherit from the last
@@ -218,6 +230,8 @@ export function normalizeInvoice(raw = {}) {
     options: {
       itemDetail: Boolean(raw.options?.itemDetail),
       quantity: Boolean(raw.options?.quantity),
+      // Older invoices predate the toggle and were written with the box on.
+      amountDue: raw.options?.amountDue ?? true,
     },
     previousBalance: {
       enabled: Boolean(raw.previousBalance?.enabled),

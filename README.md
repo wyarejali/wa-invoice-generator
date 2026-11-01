@@ -46,7 +46,8 @@ Everything that acts on the invoice lives here rather than in a bar above it:
 
 - **Status** — a dropdown; pick any state directly, listed in lifecycle order.
 - **Export** — PNG and PDF.
-- **Template layout** — minimal or business, previewed as a wireframe.
+- **Template layout** — minimal or business, previewed as a wireframe, plus the
+  business layout's amount-due box.
 - **Actions** — undo, redo, duplicate, delete.
 - **Columns** — item description, quantity & price.
 - **Rows** — previous balance, discount, tax, fee.
@@ -76,12 +77,17 @@ on every invoice a person writes — but never the client.
 | --- | --- |
 | Invoice number | Editable. New invoices get `#YYMMDD`, then `-2`, `-3`, … on collision. |
 | Date | Native date input, defaults to today. |
-| Line items | Auto-numbered, reorderable, with description + amount. |
+| Line items | Auto-numbered, reorderable, with description + amount. Descriptions wrap over as many lines as they need, on screen and in the export. |
 | Item description | Optional second line per item, in an auto-sizing field that costs no height when empty. |
-| Quantity & price | Optional columns. With them on, the amount is derived from qty x price and shown rather than typed. |
+| Quantity & price | Optional columns. With them on, the amount is derived from qty x price and shown rather than typed. The quantity steps with ↑/↓ or the arrows beside the field. |
 | Previous balance | Optional row; counts toward the subtotal. |
 | Discount / Tax / Fee | Optional rows under the subtotal, each with a `+ / −` toggle. |
 | Footer note & terms | Both editable; the terms badge auto-sizes to its text. |
+| Amount due (business) | A second, prominent copy of the total beside the client. Standard on a sent invoice, and switchable from the panel. |
+
+Enter on a blank last line does nothing rather than minting another blank one
+— holding it used to produce dozens, which then printed as numbered empty rows.
+
 
 Amounts render as money (`$150.00`, `-$15.00`) while idle and as raw numbers
 while focused, so they stay easy to type.
@@ -117,8 +123,11 @@ itself as dirty.
 
 Two palettes are kept deliberately separate in `src/index.css`:
 
-- The **document** is fixed black-on-white (`ink`, `paper`, `mute`, `faint`)
-  and is never themed, because it is what gets exported and printed.
+- The **document** is fixed black-on-white (`ink`, `paper`, `rule`, `mute`,
+  `faint`) and is never themed, because it is what gets exported and printed.
+  `rule` (`#a1a1a6`) is the section rules and the card edge — softer than the
+  text, and one line to change. Reaching for a shell token such as `border-line`
+  here is a trap: the printed invoice would then change with the app theme.
 - The **shell** is themed. Four palettes — Monochrome (default), Slate, Teal
   and Burgundy — each in light and dark, chosen from the properties panel.
 
@@ -148,12 +157,37 @@ Search by number, filter by status with live counts, a running **open**
 (unpaid + sent + draft) total, multi-select with "Select all" scoped to the
 current filter, and per-row duplicate and delete on hover.
 
+A row is two lines: number and amount on the first, status and date on the
+second. The status is an icon plus a tinted word rather than a pill — colour
+alone cannot carry a state (it is lost to a colour-blind reader and to a
+greyscale print), so each status reads as a shape first:
+
+| Status | Icon |
+| --- | --- |
+| Draft | pencil |
+| Unpaid | clock |
+| Sent | paper plane |
+| Paid | check in a circle |
+
+The active row is marked with a bar rather than a border, because a border on
+a rounded row has to follow the corner and reads as a box. Hover actions sit
+on the second line: covering a date costs nothing, covering the total does.
+
 Account, sign-in and JSON import/export live in the header's profile menu.
 
 ## Export
 
-The **Export** dropdown offers PNG (`html-to-image`) and PDF (`jsPDF`, fit to
-US Letter). Both libraries load on first use rather than in the initial bundle.
+PNG (`html-to-image`) and PDF (`jsPDF`), both loaded on first use rather than
+in the initial bundle.
+
+**PNG** is one tall image of the whole invoice, however long it is.
+
+**PDF is A4 and paginates.** The capture is a single tall bitmap, and each page
+is a slice of it drawn at the same scale — the invoice is never shrunk to fit,
+which is what made a long list unreadable. A page ends at the last *breakpoint*
+that fits, where a breakpoint is the lower edge of a line row or of a top-level
+block, so a row is never cut in half. Breakpoints are measured with the chrome
+already hidden, because that is the layout that gets printed.
 
 During a capture the card gets an `.exporting` class, which strips everything
 marked `data-chrome` — drag handles, remove buttons, `+ Add line`, the
@@ -168,6 +202,11 @@ Three quirks of `html-to-image` are worth knowing if you edit the card:
   capture, and the date is exported via a `[data-print]` sibling span.
 - It resolves its image loads inside `requestAnimationFrame`, which never fires
   in a background tab.
+- The auto-sizing fields carry an explicit pixel height measured against the
+  on-screen layout. Hiding the chrome widens the description column, so a line
+  that wrapped on screen now fits, and the stale height prints as a blank
+  second line. `ResizeObserver` fixes it a frame too late, so the capture
+  re-fits every textarea itself.
 
 ## Persistence
 
@@ -217,6 +256,27 @@ per-user folder only this app can see — but it is a worse fit than it sounds:
 The same promise — *your data is yours* — is already met here by guest mode,
 JSON export/import and row-level security. Drive is better as an optional
 **backup target** ("keep a copy in my Drive") than as the primary store.
+
+## Security
+
+- **No secrets in the repo.** `.env` is ignored and has never been committed.
+  The only keys the browser bundle carries are `VITE_SUPABASE_URL` and the
+  **anon** key, which are public by design — row-level security is what keeps
+  one account out of another's rows, not the key. The service-role key must
+  never be given a `VITE_` name, or Vite will inline it into the bundle.
+- **Every database call is made as the signed-in user**, in the app and in the
+  MCP server alike, so the policies in `supabase/schema.sql` do the enforcing
+  and no part of this needs the service-role key.
+- **Signing out clears the local cache**, so the next account on a shared
+  browser cannot inherit the previous one's invoices.
+- **The MCP consent page escapes `<`, `>` and `&` when embedding JSON in a
+  `<script>` block.** `state`, `scope` and `client_name` are all supplied by
+  whoever is connecting, and that origin holds the user's Supabase session.
+- **PKCE (S256) is mandatory.** Clients register as public
+  (`token_endpoint_auth_method: 'none'`), so the code challenge is the only
+  thing binding an authorization code to the client that asked for it.
+- **Dependencies are at zero known advisories** (`npm audit`). Keep them there
+  — jspdf and dompurify ship to the browser.
 
 ## MCP server (optional)
 

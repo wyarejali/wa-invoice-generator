@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { computeTotals, money } from '../lib/invoice'
 import Icon from './ui/Icon'
+import { StatusText } from './StatusBadge'
 import Modal from './ui/Modal'
 
 /** Every typed word must appear somewhere, so "pdf export" still finds
@@ -133,9 +134,7 @@ export default function CommandPalette({ open, onClose, commands, invoices, onOp
                   <>
                     <Icon name="receipt" size={15} className={active ? '' : 'text-fg-muted'} />
                     <span className="flex-1 font-mono text-[13px]">{row.invoice.number}</span>
-                    <span className="shrink-0 text-[12px] capitalize opacity-70">
-                      {row.invoice.status}
-                    </span>
+                    <StatusText status={row.invoice.status} size={12} className="shrink-0 text-[12px]" />
                     <span className="shrink-0 font-mono text-[12px] tabular-nums opacity-70">
                       {money(computeTotals(row.invoice).total)}
                     </span>

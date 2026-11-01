@@ -223,6 +223,18 @@ export default function PropertiesPanel({
           })}
         </div>
         <p className="mt-2 px-0.5 text-[11px] leading-relaxed text-fg-subtle">{templateHint}</p>
+        {/* The amount-due box only exists in the business layout, so the switch
+            for it belongs with the layout rather than in the generic rows. */}
+        {template === 'business' && (
+          <div className="mt-2 border-t border-line pt-1.5">
+            <SwitchRow
+              icon="receipt"
+              label="Amount due box"
+              checked={invoice.options.amountDue}
+              onChange={() => setOption('amountDue', !invoice.options.amountDue)}
+            />
+          </div>
+        )}
       </Section>
 
       <Section title="Actions">

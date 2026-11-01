@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { signInWithGoogle, signOut } from '../lib/supabase'
 import { MOD } from '../lib/shortcuts'
 import { useInvoices } from '../context/InvoicesContext'
@@ -144,10 +145,14 @@ export default function Header({
         <Icon name={isDesktop ? (railOpen ? 'railClose' : 'railOpen') : 'menu'} size={19} />
       </button>
 
-      <span className="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight">
+      <Link
+        to="/"
+        title="Home"
+        className="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight"
+      >
         <Icon name="receipt" size={17} className="text-accent" />
         Invoice
-      </span>
+      </Link>
 
       {/* Command palette doubles as the app's search, so it gets real estate
           rather than hiding in a menu. */}

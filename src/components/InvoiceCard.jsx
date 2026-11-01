@@ -67,7 +67,7 @@ function NumberField({
 }
 
 /** Textarea that grows with its content, so an empty one costs no height. */
-function AutoTextarea({ value, onChange, inputRef, ...rest }) {
+function AutoTextarea({ value, onChange, inputRef, className = '', ...rest }) {
   const ref = useRef(null)
 
   const resize = useCallback(() => {
@@ -97,11 +97,39 @@ function AutoTextarea({ value, onChange, inputRef, ...rest }) {
         if (typeof inputRef === 'function') inputRef(el)
       }}
       rows={1}
-      className="field resize-none overflow-hidden"
+      className={`field resize-none overflow-hidden ${className}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       {...rest}
     />
+  )
+}
+
+/**
+ * A sender or client block: one prominent name line and a free-form block
+ * underneath. Deliberately two fields rather than six — an address, an email
+ * and a tax number all live in the same place, in whatever shape the sender
+ * already writes them.
+ */
+function Party({ label, value, onChange, namePlaceholder, detailPlaceholder, align = '' }) {
+  return (
+    <div className={`min-w-0 flex-1 basis-[46%] ${align}`}>
+      <div className="label">{label}</div>
+      <input
+        className={`field mt-1 text-[16px] leading-snug font-semibold tracking-tight ${align}`}
+        value={value.name}
+        placeholder={namePlaceholder}
+        aria-label={`${label} name`}
+        onChange={(e) => onChange({ name: e.target.value }, 'name')}
+      />
+      <AutoTextarea
+        className={`mt-0.5 text-[12.5px] leading-relaxed text-mute ${align}`}
+        value={value.detail}
+        placeholder={detailPlaceholder}
+        aria-label={`${label} details`}
+        onChange={(v) => onChange({ detail: v }, 'detail')}
+      />
+    </div>
   )
 }
 
@@ -125,6 +153,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
   const items = invoice.items
   const options = invoice.options
   const withQty = options.quantity
+  const business = invoice.template === 'business'
 
   /* ------------------------------------------------------------------ *
    * Focus handoff. Adding or removing a line sets a target; the effect
@@ -300,6 +329,12 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [addLineAt, items.length])
 
+  const setParty = (which, patch, field) =>
+    onChange(
+      { [which]: { ...invoice[which], ...patch } },
+      { coalesce: `${which}:${field}` },
+    )
+
   const setAdjustment = (key, patch, field) =>
     onChange(
       {
@@ -318,20 +353,51 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
       ref={cardRef}
       className="w-full border border-ink bg-paper px-6 py-8 font-mono text-[14px] text-ink sm:px-10 sm:py-12"
     >
-      {/* Header ------------------------------------------------------- */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="label">Invoice</div>
-          <input
-            className="field mt-1 text-2xl tracking-tight sm:text-3xl"
-            value={invoice.number}
-            placeholder="#000000"
-            aria-label="Invoice number"
-            onChange={(e) => onChange({ number: e.target.value }, { coalesce: 'number' })}
+      {/* Header ------------------------------------------------------- *
+        * Both layouts carry the same number and date; the business one adds
+        * the sender above them and the client below.                       */}
+      <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
+        {business ? (
+          <Party
+            label="From"
+            value={invoice.from}
+            namePlaceholder="Your name or business"
+            detailPlaceholder={'Street address\nCity, country\nemail · phone'}
+            onChange={(patch, field) => setParty('from', patch, field)}
           />
-        </div>
-        <div className="text-left sm:text-right">
-          <div className="label">Date</div>
+        ) : (
+          <div className="min-w-0">
+            <div className="label">Invoice</div>
+            <input
+              className="field mt-1 text-2xl tracking-tight sm:text-3xl"
+              value={invoice.number}
+              placeholder="#000000"
+              aria-label="Invoice number"
+              onChange={(e) => onChange({ number: e.target.value }, { coalesce: 'number' })}
+            />
+          </div>
+        )}
+
+        {/* A fixed width, because the number input's intrinsic size is wide
+            enough to wrap the whole block onto its own row otherwise. */}
+        <div
+          className={
+            business ? 'w-full shrink-0 sm:w-44 sm:text-right' : 'text-left sm:text-right'
+          }
+        >
+          {business && (
+            <>
+              <div className="label">Invoice</div>
+              <input
+                className="field mt-1 text-2xl tracking-tight sm:text-right sm:text-3xl"
+                value={invoice.number}
+                placeholder="#000000"
+                aria-label="Invoice number"
+                onChange={(e) => onChange({ number: e.target.value }, { coalesce: 'number' })}
+              />
+            </>
+          )}
+          <div className={`label ${business ? 'mt-3' : ''}`}>Date</div>
           {/* The native picker (calendar glyph and all) is chrome; exports get
               the plain formatted string from the sibling below instead. */}
           <input
@@ -347,6 +413,26 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
           </span>
         </div>
       </div>
+
+      {business && (
+        <>
+          <div className="mt-6 border-t border-faint" />
+          <div className="mt-5 flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
+            <Party
+              label="Bill to"
+              value={invoice.to}
+              namePlaceholder="Client name"
+              detailPlaceholder={'Company\nAddress\nemail'}
+              onChange={(patch, field) => setParty('to', patch, field)}
+            />
+            {/* Derived, not a field: the figure a client looks for first. */}
+            <div className="border border-ink px-4 py-3 sm:min-w-[11rem] sm:text-right">
+              <div className="label">Amount due</div>
+              <div className="mt-1 text-xl tabular-nums">{money(totals.total)}</div>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="mt-6 border-t-2 border-ink" />
 
@@ -586,7 +672,24 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
       </div>
 
       {/* Footer ------------------------------------------------------- */}
-      <div className="mt-12 flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
+      {business && (
+        <div className="mt-10 border-t border-faint pt-4">
+          <div className="label">Payment details</div>
+          <AutoTextarea
+            className="mt-0.5 text-[12.5px] leading-relaxed"
+            value={invoice.payment}
+            placeholder={'Bank · account or IBAN\nor a payment link'}
+            aria-label="Payment details"
+            onChange={(v) => onChange({ payment: v }, { coalesce: 'payment' })}
+          />
+        </div>
+      )}
+
+      <div
+        className={`${
+          business ? 'mt-8' : 'mt-12'
+        } flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between`}
+      >
         <textarea
           className="field min-h-[2.5rem] w-full resize-none italic sm:flex-1"
           rows={2}

@@ -355,7 +355,13 @@ export function InvoicesProvider({ children }) {
    * Actions
    * ------------------------------------------------------------------ */
   const addInvoice = useCallback(() => {
-    const invoice = createInvoice(invoicesRef.current.map((i) => i.number))
+    // The newest invoice is the best guess at the sender's current details and
+    // preferred layout, so a new one starts from it rather than from blank.
+    const recent = invoicesRef.current[0]
+    const invoice = createInvoice(
+      invoicesRef.current.map((i) => i.number),
+      recent ? { template: recent.template, from: recent.from, payment: recent.payment } : {},
+    )
     commit((prev) => sortInvoices([invoice, ...prev]))
     return invoice
   }, [commit])

@@ -1,4 +1,4 @@
-import { ADJUSTMENT_KEYS, num } from '../lib/invoice'
+import { ADJUSTMENT_KEYS, TEMPLATES, num } from '../lib/invoice'
 import { MOD } from '../lib/shortcuts'
 import { PALETTES } from '../lib/theme'
 import { useInvoices } from '../context/InvoicesContext'
@@ -50,9 +50,60 @@ function ActionButton({ icon, label, onClick, disabled, title, danger }) {
 }
 
 /**
+ * A wireframe of each layout, drawn rather than described: which blocks a
+ * template adds is quicker to see than to read.
+ */
+function TemplatePreview({ id }) {
+  const bar = 'fill-current opacity-70'
+  const line = 'fill-current opacity-25'
+  return (
+    <svg viewBox="0 0 48 34" className="h-[34px] w-full" aria-hidden="true">
+      <rect
+        x="0.5"
+        y="0.5"
+        width="47"
+        height="33"
+        rx="2"
+        fill="none"
+        className="stroke-current opacity-25"
+      />
+      {id === 'minimal' ? (
+        <>
+          <rect x="6" y="6" width="15" height="4" className={bar} />
+          <rect x="34" y="7" width="8" height="2" className={line} />
+          <rect x="6" y="14" width="36" height="1" className={bar} />
+          <rect x="6" y="19" width="20" height="2" className={line} />
+          <rect x="6" y="23" width="24" height="2" className={line} />
+          <rect x="30" y="28" width="12" height="3" className={bar} />
+        </>
+      ) : (
+        <>
+          <rect x="6" y="5" width="12" height="3" className={bar} />
+          <rect x="6" y="10" width="15" height="1.5" className={line} />
+          <rect x="6" y="13" width="11" height="1.5" className={line} />
+          <rect x="31" y="5" width="11" height="4" className={bar} />
+          <rect x="6" y="18" width="36" height="1" className={bar} />
+          <rect x="6" y="22" width="9" height="2" className={line} />
+          <rect x="6" y="26" width="16" height="1.5" className={line} />
+          <rect x="6" y="29" width="13" height="1.5" className={line} />
+          <rect
+            x="29.5"
+            y="21.5"
+            width="12.5"
+            height="9"
+            fill="none"
+            className="stroke-current opacity-60"
+          />
+        </>
+      )}
+    </svg>
+  )
+}
+
+/**
  * The invoice's controls, parked beside the document instead of in a bar above
- * it. Status, history, export, which rows and columns the invoice shows, and
- * the shell's appearance — with room to grow downward.
+ * it. Export first because it is the last thing you do and the most looked
+ * for; then the layout, the one-off actions, and what the document shows.
  */
 export default function PropertiesPanel({
   invoice,
@@ -66,6 +117,9 @@ export default function PropertiesPanel({
 }) {
   const { undo, redo, canUndo, canRedo } = useInvoices()
   const { resolved, theme, setTheme, palette, setPalette } = appearance
+
+  const template = invoice.template || 'minimal'
+  const templateHint = TEMPLATES.find((t) => t.id === template)?.hint
 
   const setOption = (key, value) =>
     onChange({ options: { ...invoice.options, [key]: value } })
@@ -115,6 +169,62 @@ export default function PropertiesPanel({
         <StatusSelect status={invoice.status} onChange={(status) => onChange({ status })} />
       </Section>
 
+      <Section title="Export">
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={exporting}
+            onClick={() => onExport('png')}
+          >
+            <Icon name="image" size={15} />
+            PNG
+          </button>
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={exporting}
+            onClick={() => onExport('pdf')}
+          >
+            <Icon name="file" size={15} />
+            PDF
+          </button>
+        </div>
+        {exporting && <p className="mt-2 text-[11px] text-fg-subtle">Rendering…</p>}
+      </Section>
+
+      <Section title="Template layout">
+        <div className="grid grid-cols-2 gap-1.5">
+          {TEMPLATES.map((option) => {
+            const active = template === option.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={active}
+                title={option.hint}
+                onClick={() => onChange({ template: option.id })}
+                className={`rounded-[8px] border p-1.5 text-left ${
+                  active
+                    ? 'border-accent bg-accent-soft text-accent'
+                    : 'border-line text-fg-subtle hover:bg-raised'
+                }`}
+              >
+                <TemplatePreview id={option.id} />
+                <span
+                  className={`mt-1 block px-0.5 text-[12px] font-medium ${
+                    active ? 'text-accent' : 'text-fg'
+                  }`}
+                >
+                  {option.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-2 px-0.5 text-[11px] leading-relaxed text-fg-subtle">{templateHint}</p>
+      </Section>
+
       <Section title="Actions">
         <div className="grid grid-cols-4 gap-1.5">
           <ActionButton
@@ -139,30 +249,6 @@ export default function PropertiesPanel({
           />
           <ActionButton icon="trash" label="Delete" danger onClick={onDelete} />
         </div>
-      </Section>
-
-      <Section title="Export">
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            className="ui-btn"
-            disabled={exporting}
-            onClick={() => onExport('png')}
-          >
-            <Icon name="image" size={15} />
-            PNG
-          </button>
-          <button
-            type="button"
-            className="ui-btn"
-            disabled={exporting}
-            onClick={() => onExport('pdf')}
-          >
-            <Icon name="file" size={15} />
-            PDF
-          </button>
-        </div>
-        {exporting && <p className="mt-2 text-[11px] text-fg-subtle">Rendering…</p>}
       </Section>
 
       <Section title="Columns">
@@ -234,6 +320,7 @@ export default function PropertiesPanel({
                 type="button"
                 onClick={() => setPalette(option.id)}
                 aria-pressed={active}
+                title={option.title || option.label}
                 className={`flex items-center gap-2 rounded-[8px] border px-2 py-1.5 text-[12px] ${
                   active
                     ? 'border-accent bg-accent-soft text-accent'

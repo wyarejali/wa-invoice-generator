@@ -12,6 +12,19 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
+## Routes
+
+| Path | What it is |
+| --- | --- |
+| `/` | The landing page — what a first-time visitor sees. Sign in with Google, or go straight in as a guest. |
+| `/app` | The way in: opens the newest invoice, creating one if the archive is empty. Google sign-in redirects here. |
+| `/i/:id` | The editor for one invoice. |
+
+Deep links are client-side routes, so a static host needs a rewrite of every
+unknown path to `index.html` (Netlify `_redirects`, Vercel `rewrites`, or
+`try_files $uri /index.html` on nginx). `vite dev` and `vite preview` already
+do this.
+
 ## Layout
 
 A top header, an invoice list rail on the left, the document in the middle, and
@@ -31,11 +44,30 @@ Icons are [Tabler](https://tabler.io/icons) (MIT), imported by name through
 Everything that acts on the invoice lives here rather than in a bar above it:
 
 - **Status** — a dropdown; pick any state directly, listed in lifecycle order.
-- **Actions** — undo, redo, duplicate, delete.
 - **Export** — PNG and PDF.
+- **Template layout** — minimal or business, previewed as a wireframe.
+- **Actions** — undo, redo, duplicate, delete.
 - **Columns** — item description, quantity & price.
 - **Rows** — previous balance, discount, tax, fee.
 - **Appearance** — light/dark/auto, and the palette.
+
+## Template layouts
+
+Both layouts share one data shape, so switching is lossless in either
+direction and adding a third never migrates an existing invoice.
+
+| Layout | Adds |
+| --- | --- |
+| `minimal` | Nothing — number, date, lines, totals, note, terms. |
+| `business` | A **From** block, a **Bill to** block, an *Amount due* box beside the client, and a payment-details block above the footer. |
+
+Each party is a name plus one free-form block rather than six labelled
+fields: an address, a VAT number and a phone all go in whatever shape the
+sender already writes them.
+
+A new invoice inherits `template`, `from` and `payment` from the most recent
+one (`addInvoice` in `src/context/InvoicesContext.jsx`) — they are identical
+on every invoice a person writes — but never the client.
 
 ## Editor
 
@@ -161,7 +193,29 @@ Without these the app runs in guest mode. Then:
    `updated_at`), a per-user unique index on `lower(number)`, and RLS policies
    restricting every operation to `auth.uid() = user_id`.
 2. Enable the Google provider under **Authentication → Providers**.
-3. Add your app origin to **Authentication → URL Configuration**.
+3. Add your app origin to **Authentication → URL Configuration**, and
+   `<origin>/app` to the allowed redirect URLs — that is where
+   `signInWithGoogle()` returns to.
+
+Google is the only provider, on purpose: no password to store, reset or leak,
+and it is an account the user already has.
+
+### Why not store invoices in the user's own Google Drive?
+
+It is possible — a Drive app would write to `appDataFolder`, a hidden
+per-user folder only this app can see — but it is a worse fit than it sounds:
+
+- The `drive.appdata` scope is **sensitive**, so a published app needs Google
+  verification before anyone outside the test list can sign in.
+- Drive is a file store, not a database. Every change rewrites a whole file,
+  there is no query, and two open tabs overwrite each other with no conflict
+  detection.
+- Supabase's `provider_token` is not refreshed with the session, so a Drive
+  token dies about an hour after sign-in unless a server refreshes it.
+
+The same promise — *your data is yours* — is already met here by guest mode,
+JSON export/import and row-level security. Drive is better as an optional
+**backup target** ("keep a copy in my Drive") than as the primary store.
 
 ## MCP server (optional)
 

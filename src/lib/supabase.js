@@ -16,11 +16,21 @@ export const supabase =
 
 export const supabaseEnabled = Boolean(supabase)
 
+/**
+ * Google is the only provider: one button, no password to lose, and the
+ * account is one the user already has. The redirect lands on `/app` so a
+ * sign-in from the landing page ends up inside the editor.
+ */
 export function signInWithGoogle() {
   if (!supabase) return Promise.resolve()
   return supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.origin },
+    options: {
+      redirectTo: `${window.location.origin}/app`,
+      // Let people pick which Google account, rather than silently reusing the
+      // one the browser happens to be signed into.
+      queryParams: { prompt: 'select_account' },
+    },
   })
 }
 

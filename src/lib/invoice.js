@@ -6,6 +6,32 @@ export const STATUSES = ['draft', 'unpaid', 'sent', 'paid']
 
 export const ADJUSTMENT_KEYS = ['discount', 'tax', 'fee']
 
+/**
+ * Document layouts. `minimal` is the original bare card; `business` adds the
+ * sender and client blocks plus payment details — what an invoice actually
+ * sent to a client needs. Both share the same line items and totals, so
+ * switching is lossless in either direction.
+ */
+export const TEMPLATES = [
+  { id: 'minimal', label: 'Minimal', hint: 'Number, lines, total. Nothing else.' },
+  {
+    id: 'business',
+    label: 'Business',
+    hint: 'Adds your details, the client, and how to pay.',
+  },
+]
+
+const TEMPLATE_IDS = TEMPLATES.map((t) => t.id)
+
+export function templateId(value) {
+  return TEMPLATE_IDS.includes(value) ? value : 'minimal'
+}
+
+/** A sender or client block: one name line plus a free-form address block. */
+function party(raw) {
+  return { name: raw?.name ?? '', detail: raw?.detail ?? '' }
+}
+
 const ADJUSTMENT_DEFAULTS = {
   discount: { label: 'Discount', sign: -1 },
   tax: { label: 'Tax', sign: 1 },
@@ -54,7 +80,13 @@ export function emptyLine() {
 /** Optional columns and rows, toggled from the properties panel. */
 export const DEFAULT_OPTIONS = { itemDetail: false, quantity: false }
 
-export function createInvoice(existingNumbers = []) {
+/**
+ * A fresh draft. `carry` holds what a new invoice should inherit from the last
+ * one: the layout, the sender's own details and the payment instructions are
+ * identical on every invoice a person writes, and retyping them is the single
+ * most tedious part of invoicing.
+ */
+export function createInvoice(existingNumbers = [], carry = {}) {
   const date = todayISO()
   const now = new Date().toISOString()
   return {
@@ -62,6 +94,10 @@ export function createInvoice(existingNumbers = []) {
     number: generateNumber(existingNumbers, date),
     date,
     status: 'draft',
+    template: templateId(carry.template),
+    from: party(carry.from),
+    to: party(),
+    payment: carry.payment ?? '',
     items: [emptyLine()],
     options: { ...DEFAULT_OPTIONS },
     previousBalance: { enabled: false, label: 'Previous balance', amount: '' },
@@ -157,6 +193,10 @@ export function normalizeInvoice(raw = {}) {
     number: raw.number || base.number,
     date: raw.date || base.date,
     status: STATUSES.includes(raw.status) ? raw.status : 'draft',
+    template: templateId(raw.template),
+    from: party(raw.from),
+    to: party(raw.to),
+    payment: raw.payment ?? '',
     items,
     options: {
       itemDetail: Boolean(raw.options?.itemDetail),

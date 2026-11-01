@@ -106,6 +106,13 @@
   html {
     -webkit-text-size-adjust: 100%;
   }
+  /* The landing page's nav jumps to sections; respect a stated preference for
+     less motion. */
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
   body {
     margin: 0;
     background: var(--color-bg);

@@ -18,6 +18,7 @@ import CommandPalette from './components/CommandPalette'
 import Header from './components/Header'
 import Icon from './components/ui/Icon'
 import InvoiceEditor from './components/InvoiceEditor'
+import LandingPage from './components/LandingPage'
 import PropertiesPanel from './components/PropertiesPanel'
 import ShortcutsDialog from './components/ShortcutsDialog'
 import Sidebar from './components/Sidebar'
@@ -239,6 +240,14 @@ function Shell() {
         run: () => patchActive({ status: nextStatus(active.status) }),
       },
       {
+        id: 'layout',
+        label: active?.template === 'business' ? 'Use the minimal layout' : 'Use the business layout',
+        icon: 'fileText',
+        disabled: !active,
+        run: () =>
+          patchActive({ template: active.template === 'business' ? 'minimal' : 'business' }),
+      },
+      {
         id: 'png',
         label: 'Export as PNG',
         icon: 'image',
@@ -433,8 +442,11 @@ function Shell() {
   )
 }
 
-/** Land on the newest invoice, creating a first one if the archive is empty. */
-function Landing() {
+/**
+ * `/app` is the way in from the landing page: open the newest invoice, or
+ * create a first one if the archive is empty.
+ */
+function EnterApp() {
   const { invoices, addInvoice } = useInvoices()
   const [createdId, setCreatedId] = useState(null)
   // A ref, not state: StrictMode runs this effect twice with the same state,
@@ -459,7 +471,8 @@ export default function App() {
         <ConfirmProvider>
           <Router>
             <Routes>
-              <Route path="/" element={<Landing />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/app" element={<EnterApp />} />
               <Route path="/i/:id" element={<Shell />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

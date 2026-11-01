@@ -5,7 +5,7 @@ const PALETTE_KEY = 'wainvoice:palette'
 
 /** Swatches are [accent, muted, line] — what the picker previews. */
 export const PALETTES = [
-  { id: 'mono', label: 'Monochrome', swatch: ['#18181b', '#71717a', '#e4e4e7'] },
+  { id: 'mono', label: 'Mono', title: 'Monochrome', swatch: ['#18181b', '#71717a', '#e4e4e7'] },
   { id: 'indigo', label: 'Slate', swatch: ['#4f46e5', '#64748b', '#e2e8f0'] },
   { id: 'teal', label: 'Teal', swatch: ['#0f766e', '#737373', '#e5e5e5'] },
   { id: 'burgundy', label: 'Burgundy', swatch: ['#9f1239', '#78716c', '#e7e5e4'] },

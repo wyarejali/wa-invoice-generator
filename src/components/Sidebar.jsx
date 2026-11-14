@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { STATUSES, computeTotals, formatDay, money, sumTotals } from '../lib/invoice';
+import { STATUSES, computeTotals, displayStatus, formatDay, isOverdue, money, sumTotals } from '../lib/invoice';
 import { MOD } from '../lib/shortcuts';
 import { useInvoices } from '../context/InvoicesContext';
 import { useConfirm } from './ui/ConfirmProvider';
@@ -15,17 +15,27 @@ export default function Sidebar({ activeId, onSelect, onNew, onClose, query, onQ
     const [selected, setSelected] = useState(() => new Set());
 
     const counts = useMemo(() => {
-        const out = { all: invoices.length };
+        const out = { all: invoices.length, overdue: 0 };
         for (const s of STATUSES) out[s] = 0;
-        for (const inv of invoices) out[inv.status] = (out[inv.status] ?? 0) + 1;
+        for (const inv of invoices) {
+            out[inv.status] = (out[inv.status] ?? 0) + 1;
+            if (isOverdue(inv)) out.overdue += 1;
+        }
         return out;
     }, [invoices]);
 
+    // Overdue is a reading of unpaid and sent rather than a status of its own,
+    // so the filter only appears once something has actually gone past due.
+    const filters = useMemo(
+        () => ['all', ...STATUSES, ...(counts.overdue ? ['overdue'] : [])],
+        [counts.overdue],
+    );
+
     const filtered = useMemo(() => {
         const q = query.trim().toLowerCase();
-        return invoices.filter(
-            (i) => (filter === 'all' || i.status === filter) && (!q || i.number.toLowerCase().includes(q)),
-        );
+        const matchesFilter = (i) =>
+            filter === 'all' || (filter === 'overdue' ? isOverdue(i) : i.status === filter);
+        return invoices.filter((i) => matchesFilter(i) && (!q || i.number.toLowerCase().includes(q)));
     }, [invoices, query, filter]);
 
     // Outstanding is everything not yet paid — the number worth watching.
@@ -117,7 +127,7 @@ export default function Sidebar({ activeId, onSelect, onNew, onClose, query, onQ
 
             {/* Status filters */}
             <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
-                {['all', ...STATUSES].map((key) => (
+                {filters.map((key) => (
                     <button
                         key={key}
                         type="button"
@@ -227,7 +237,11 @@ export default function Sidebar({ activeId, onSelect, onNew, onClose, query, onQ
                                                 }`}>
                                                 {inv.number}
                                             </span>
-                                            <StatusText status={inv.status} size={12} className="shrink-0 text-[11px]" />
+                                            <StatusText
+                                                status={displayStatus(inv)}
+                                                size={12}
+                                                className="shrink-0 text-[11px]"
+                                            />
                                         </span>
                                         <span className="shrink-0 font-mono text-[12.5px] tabular-nums">
                                             {money(computeTotals(inv).total)}

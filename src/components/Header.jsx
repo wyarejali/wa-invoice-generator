@@ -123,6 +123,7 @@ function ProfileMenu({ onImport, onExport, onShortcuts }) {
 }
 
 export default function Header({
+  isDashboard,
   isDesktop,
   railOpen,
   onToggleRail,
@@ -167,6 +168,16 @@ export default function Header({
       </button>
 
       <div className="ml-auto flex items-center gap-1 sm:ml-0">
+        <Link
+          to="/dashboard"
+          className="ui-icon-btn"
+          aria-label="Dashboard"
+          aria-current={isDashboard ? 'page' : undefined}
+          title="Dashboard"
+          style={isDashboard ? { color: 'var(--color-accent)' } : undefined}
+        >
+          <Icon name="dashboard" size={18} />
+        </Link>
         <button
           type="button"
           className="ui-icon-btn sm:hidden"
@@ -175,15 +186,17 @@ export default function Header({
         >
           <Icon name="search" size={18} />
         </button>
-        <button
-          type="button"
-          className="ui-icon-btn"
-          aria-label={panelOpen ? 'Hide invoice settings' : 'Show invoice settings'}
-          aria-expanded={panelOpen}
-          onClick={onTogglePanel}
-        >
-          <Icon name="panel" size={18} />
-        </button>
+        {!isDashboard && (
+          <button
+            type="button"
+            className="ui-icon-btn"
+            aria-label={panelOpen ? 'Hide invoice settings' : 'Show invoice settings'}
+            aria-expanded={panelOpen}
+            onClick={onTogglePanel}
+          >
+            <Icon name="panel" size={18} />
+          </button>
+        )}
         <ProfileMenu onImport={onImport} onExport={onExport} onShortcuts={onShortcuts} />
       </div>
     </header>

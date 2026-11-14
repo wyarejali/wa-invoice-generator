@@ -414,6 +414,9 @@
   .ui-status-paid {
     color: light-dark(#047857, #34d399);
   }
+  .ui-status-overdue {
+    color: light-dark(#b91c1c, #f87171);
+  }
 
   .ui-overlay {
     position: fixed;

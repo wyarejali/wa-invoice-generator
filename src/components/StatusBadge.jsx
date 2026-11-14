@@ -10,6 +10,9 @@ export const STATUS_ICON = {
   unpaid: 'clock',
   sent: 'send',
   paid: 'circleCheck',
+  // Not a stored status: `displayStatus` reads it off an unpaid or sent
+  // invoice that is past its due date.
+  overdue: 'alert',
 }
 
 /** Tinted pill. For places that need the status to look like a control. */

@@ -16,9 +16,15 @@ npm run dev          # http://localhost:5173
 
 | Path | What it is |
 | --- | --- |
-| `/` | The landing page — what a first-time visitor sees. Sign in with Google, or go straight in as a guest. |
-| `/app` | The way in: opens the newest invoice, creating one if the archive is empty. Google sign-in redirects here. |
+| `/` | The landing page, for visitors without an account. Anyone signed in is sent to `/dashboard` instead. |
+| `/app` | The way in. Signed in → the dashboard; a guest → the editor, with a first invoice created if the archive is empty. Google sign-in redirects here. |
+| `/dashboard` | Stats and charts over the whole archive. Open to guests too — their invoices are local, but the arithmetic is the same. |
 | `/i/:id` | The editor for one invoice. |
+
+Both redirects wait for `authReady`, or a returning user sees the marketing
+page flash past before being moved on. The dashboard and the editor are the
+same `Shell` component with two middles, so they share the header, the rail,
+the drawers, the command palette and every shortcut.
 
 Deep links are client-side routes, so a static host needs a rewrite of every
 unknown path to `index.html`, or signing in lands on the host's own 404
@@ -71,14 +77,87 @@ A new invoice inherits `template`, `from` and `payment` from the most recent
 one (`addInvoice` in `src/context/InvoicesContext.jsx`) — they are identical
 on every invoice a person writes — but never the client.
 
+## Dashboard
+
+Four figures, then the charts. Outstanding and drafts are stocks — what is
+true right now. Collected is a flow, so it is measured over 30 days and
+compared with the 30 before it, which is the only way one number says whether
+things are improving.
+
+| Card | Reads |
+| --- | --- |
+| Billed against collected | 12 months. Billed by invoice date, collected by payment date — the gap between the bars is the lag. |
+| Status | Count and value per status. Overdue is deliberately absent: it is drawn from unpaid and sent, so it would count the same money twice. |
+| Waiting on payment | Open invoices, oldest first, each with a one-click **Mark paid**. |
+| How long they have waited | Aged into buckets from the due date, or the invoice date where there is none. |
+| Top clients | Grouped by client name. Only the business layout records one, so everything else lands in "No client recorded" rather than being dropped. |
+| Recent activity | Last six touched. |
+
+Everything is derived in `src/lib/stats.js` — pure functions over the invoice
+array, so no component knows how a figure is reached and each one can be
+checked on its own.
+
+### Charts without a chart library
+
+Three shapes were needed: columns, a ring and ranked bars. Recharts is ~100 kB
+against a ~140 kB gzipped bundle, and the dashboard is the home page for
+anyone signed in, so lazy-loading would not have hidden the cost. They are
+~150 lines in `src/components/charts/` instead:
+
+- **ColumnChart** is plain elements, not SVG: a bar chart is a row of boxes,
+  and boxes size themselves against their container, where an SVG needs a
+  measured viewBox to stay proportional at every width.
+- **Donut** draws each segment as a dashed circle stroke — one dash as long as
+  the share, one gap covering the rest, rotated into place. No path
+  arithmetic, crisp at any size.
+- Colour comes from `currentColor` on the status classes in `index.css`, so
+  all four palettes and both schemes follow for free.
+
+The readout sits in the card header rather than in a tooltip that follows the
+pointer: that is the part of a chart that breaks on touch, and there is
+nothing it would say that the header cannot.
+
+### Renamed item fields
+
+A line used to store `description` (the one line) and `detail` (the optional
+note), which reads backwards once the note is the description proper. They are
+now `title` and `description`.
+
+Old data is migrated on load, and the absence of `title` is what marks an item
+as old — checking the values instead would copy a one-line item into both
+fields. That covers browser storage, cloud rows, exported JSON and anything an
+MCP client sends, since all four go through `normalizeInvoice`. The option
+that shows the second field moved from `options.itemDetail` to
+`options.itemDescription` the same way.
+
+## Lifecycle dates
+
+`updatedAt` cannot answer "what did I get paid in October?" — fixing a typo in
+January rewrites it — and the invoice date is when the work was billed, not
+when the money arrived. So `statusPatch()` stamps **`paidAt`** and **`sentAt`**
+as a status changes, and every revenue figure reads those. Moving a status
+backwards clears the stamp: an invoice marked paid by mistake and set back to
+unpaid has no payment date, because no payment happened.
+
+Invoices written before this existed are backfilled from the invoice date on
+load — the best evidence left of when it happened.
+
+## Due dates and overdue
+
+An optional **Due date** field, switched on per invoice from the panel. Overdue
+is then a *reading* of unpaid and sent rather than a fifth stored status
+(`isOverdue` / `displayStatus`), so nothing has to keep a stored flag honest as
+the clock moves. The sidebar grows an **Overdue** filter only once something
+has actually gone past due.
+
 ## Editor
 
 | Feature | Notes |
 | --- | --- |
 | Invoice number | Editable. New invoices get `#YYMMDD`, then `-2`, `-3`, … on collision. |
 | Date | Native date input, defaults to today. |
-| Line items | Auto-numbered, reorderable, with description + amount. Descriptions wrap over as many lines as they need, on screen and in the export. |
-| Item description | Optional second line per item, in an auto-sizing field that costs no height when empty. |
+| Line items | Auto-numbered, reorderable: a **title** and an amount. Titles wrap over as many lines as they need, on screen and in the export. |
+| Item description | An optional second field under the title, in an auto-sizing field that costs no height when empty. The title is set in medium; the description is a step smaller and muted, so a line reads as one thing with a note rather than two competing lines. |
 | Quantity & price | Optional columns. With them on, the amount is derived from qty x price and shown rather than typed. The quantity steps with ↑/↓ or the arrows beside the field. |
 | Previous balance | Optional row; counts toward the subtotal. |
 | Discount / Tax / Fee | Optional rows under the subtotal, each with a `+ / −` toggle. |
@@ -207,6 +286,13 @@ Three quirks of `html-to-image` are worth knowing if you edit the card:
   that wrapped on screen now fits, and the stale height prints as a blank
   second line. `ResizeObserver` fixes it a frame too late, so the capture
   re-fits every textarea itself.
+
+## CSV
+
+The dashboard's **CSV** button writes one row per invoice — number, dates,
+status, client, subtotal, each adjustment, total, when it was sent and paid,
+and how many days that took. Money is written as bare numbers: a currency
+symbol in a CSV cell is a string, and nobody can sum a column of strings.
 
 ## Persistence
 

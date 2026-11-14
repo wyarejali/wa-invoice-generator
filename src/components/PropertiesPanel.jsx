@@ -1,4 +1,4 @@
-import { ADJUSTMENT_KEYS, TEMPLATES, num } from '../lib/invoice'
+import { ADJUSTMENT_KEYS, TEMPLATES, num, statusPatch } from '../lib/invoice'
 import { MOD } from '../lib/shortcuts'
 import { PALETTES } from '../lib/theme'
 import { useInvoices } from '../context/InvoicesContext'
@@ -166,7 +166,11 @@ export default function PropertiesPanel({
       </div>
 
       <Section title="Status">
-        <StatusSelect status={invoice.status} onChange={(status) => onChange({ status })} />
+        {/* Through statusPatch, so the dashboard knows when this happened. */}
+        <StatusSelect
+          status={invoice.status}
+          onChange={(status) => onChange(statusPatch(invoice, status))}
+        />
       </Section>
 
       <Section title="Export">
@@ -225,16 +229,22 @@ export default function PropertiesPanel({
         <p className="mt-2 px-0.5 text-[11px] leading-relaxed text-fg-subtle">{templateHint}</p>
         {/* The amount-due box only exists in the business layout, so the switch
             for it belongs with the layout rather than in the generic rows. */}
-        {template === 'business' && (
-          <div className="mt-2 border-t border-line pt-1.5">
+        <div className="mt-2 border-t border-line pt-1.5">
+          <SwitchRow
+            icon="clock"
+            label="Due date"
+            checked={invoice.options.dueDate}
+            onChange={() => setOption('dueDate', !invoice.options.dueDate)}
+          />
+          {template === 'business' && (
             <SwitchRow
               icon="receipt"
               label="Amount due box"
               checked={invoice.options.amountDue}
               onChange={() => setOption('amountDue', !invoice.options.amountDue)}
             />
-          </div>
-        )}
+          )}
+        </div>
       </Section>
 
       <Section title="Actions">
@@ -267,8 +277,8 @@ export default function PropertiesPanel({
         <SwitchRow
           icon="detail"
           label="Item description"
-          checked={invoice.options.itemDetail}
-          onChange={() => setOption('itemDetail', !invoice.options.itemDetail)}
+          checked={invoice.options.itemDescription}
+          onChange={() => setOption('itemDescription', !invoice.options.itemDescription)}
         />
         <SwitchRow
           icon="columns"

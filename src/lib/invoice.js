@@ -7,6 +7,27 @@ export const STATUSES = ['draft', 'unpaid', 'sent', 'paid']
 export const ADJUSTMENT_KEYS = ['discount', 'tax', 'fee']
 
 /**
+ * Moving to a status stamps when it happened.
+ *
+ * `updatedAt` cannot answer "what did I get paid in October?" — fixing a typo
+ * in January rewrites it — and the invoice date is when the work was billed,
+ * not when the money arrived. So the moment is recorded as it happens, and
+ * every revenue figure in the dashboard reads these rather than guessing.
+ *
+ * Going backwards clears the stamp: an invoice marked paid by mistake and set
+ * back to unpaid has no payment date, because no payment happened.
+ */
+export function statusPatch(invoice, status) {
+  const now = new Date().toISOString()
+  const patch = { status }
+  if (status === 'paid') patch.paidAt = invoice.paidAt || now
+  else patch.paidAt = null
+  if (status === 'sent' || status === 'paid') patch.sentAt = invoice.sentAt || now
+  else patch.sentAt = null
+  return patch
+}
+
+/**
  * Document layouts. `minimal` is the original bare card; `business` adds the
  * sender and client blocks plus payment details — what an invoice actually
  * sent to a client needs. Both share the same line items and totals, so
@@ -103,11 +124,66 @@ export function generateNumber(existing = [], dateISO = todayISO()) {
 }
 
 export function emptyLine() {
-  return { id: uid(), description: '', detail: '', qty: '', rate: '', amount: '' }
+  return { id: uid(), title: '', description: '', qty: '', rate: '', amount: '' }
+}
+
+/**
+ * A line item, from whatever shape it arrives in.
+ *
+ * The fields used to be `description` (the one line) and `detail` (the
+ * optional note underneath), which read backwards once the note became the
+ * description proper. The absence of `title` is what marks an old item —
+ * checking the values instead would copy a one-line item into both fields.
+ */
+function normalizeItem(raw = {}) {
+  const legacy = raw.title === undefined
+  return {
+    id: raw.id || uid(),
+    title: (legacy ? raw.description : raw.title) ?? '',
+    description: (legacy ? raw.detail : raw.description) ?? '',
+    qty: raw.qty ?? '',
+    rate: raw.rate ?? '',
+    amount: raw.amount ?? '',
+  }
 }
 
 /** Optional columns, rows and blocks, toggled from the properties panel. */
-export const DEFAULT_OPTIONS = { itemDetail: false, quantity: false, amountDue: true }
+export const DEFAULT_OPTIONS = {
+  itemDescription: false,
+  quantity: false,
+  amountDue: true,
+  dueDate: false,
+}
+
+/** How many whole days `b` is after `a`, both ISO dates. */
+export function daysBetween(a, b) {
+  if (!a || !b) return null
+  const from = new Date(`${String(a).slice(0, 10)}T00:00:00`)
+  const to = new Date(`${String(b).slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(from) || Number.isNaN(to)) return null
+  return Math.round((to - from) / 86400000)
+}
+
+/** The date an invoice is measured against: its due date, or the day it was raised. */
+export function reckoningDate(invoice) {
+  return (invoice.options?.dueDate && invoice.dueDate) || invoice.date
+}
+
+/** Unpaid or sent, and past its due date. Derived — never a stored status. */
+export function isOverdue(invoice, today = todayISO()) {
+  if (invoice.status !== 'unpaid' && invoice.status !== 'sent') return false
+  if (!invoice.options?.dueDate || !invoice.dueDate) return false
+  return invoice.dueDate < today
+}
+
+/**
+ * What to show. Overdue is a fifth badge but not a fifth status: it is a
+ * reading of the other two, so nothing has to keep a stored flag honest as
+ * the clock moves.
+ */
+export function displayStatus(invoice, today = todayISO()) {
+  return isOverdue(invoice, today) ? 'overdue' : invoice.status
+}
 
 /**
  * A fresh draft. `carry` holds what a new invoice should inherit from the last
@@ -122,7 +198,10 @@ export function createInvoice(existingNumbers = [], carry = {}) {
     id: uid(),
     number: generateNumber(existingNumbers, date),
     date,
+    dueDate: '',
     status: 'draft',
+    paidAt: null,
+    sentAt: null,
     template: templateId(carry.template),
     from: party(carry.from),
     to: party(),
@@ -206,32 +285,33 @@ export function normalizeInvoice(raw = {}) {
       sign: src.sign === -1 ? -1 : 1,
     }
   }
-  const items = Array.isArray(raw.items) && raw.items.length
-    ? raw.items.map((i) => ({
-        id: i.id || uid(),
-        description: i.description ?? '',
-        detail: i.detail ?? '',
-        qty: i.qty ?? '',
-        rate: i.rate ?? '',
-        amount: i.amount ?? '',
-      }))
-    : [emptyLine()]
+  const items =
+    Array.isArray(raw.items) && raw.items.length ? raw.items.map(normalizeItem) : [emptyLine()]
 
   return {
     id: raw.id || base.id,
     number: raw.number || base.number,
     date: raw.date || base.date,
+    dueDate: raw.dueDate || '',
     status: STATUSES.includes(raw.status) ? raw.status : 'draft',
+    // Invoices written before these existed are backfilled from the invoice
+    // date, which is the best evidence left of when it happened.
+    paidAt: raw.status === 'paid' ? isoTimestamp(raw.paidAt, `${raw.date || base.date}T12:00:00.000Z`) : null,
+    sentAt:
+      raw.status === 'sent' || raw.status === 'paid'
+        ? isoTimestamp(raw.sentAt, `${raw.date || base.date}T12:00:00.000Z`)
+        : null,
     template: templateId(raw.template),
     from: party(raw.from),
     to: party(raw.to),
     payment: raw.payment ?? '',
     items,
     options: {
-      itemDetail: Boolean(raw.options?.itemDetail),
+      itemDescription: Boolean(raw.options?.itemDescription ?? raw.options?.itemDetail),
       quantity: Boolean(raw.options?.quantity),
       // Older invoices predate the toggle and were written with the box on.
       amountDue: raw.options?.amountDue ?? true,
+      dueDate: Boolean(raw.options?.dueDate),
     },
     previousBalance: {
       enabled: Boolean(raw.previousBalance?.enabled),
@@ -264,6 +344,8 @@ export function duplicateInvoice(source, existingNumbers = []) {
     number: generateNumber(existingNumbers, date),
     date,
     status: 'draft',
+    paidAt: null,
+    sentAt: null,
     // Fresh ids, or React would see two rows sharing a key across invoices.
     items: (source.items || []).map((i) => ({ ...i, id: uid() })),
     createdAt: now,

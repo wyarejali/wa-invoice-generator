@@ -185,7 +185,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
             const next = [...items];
             next.splice(index, 0, line);
             onChange({ items: next });
-            setFocusTarget({ id: line.id, field: 'description' });
+            setFocusTarget({ id: line.id, field: 'title' });
         },
         [items, onChange],
     );
@@ -196,7 +196,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
         onChange({ items: rest.length ? rest : [emptyLine()] });
         // Land on the row that takes its place, or the one above it.
         const neighbour = rest[index] || rest[index - 1];
-        if (neighbour) setFocusTarget({ id: neighbour.id, field: 'description', caret: 'end' });
+        if (neighbour) setFocusTarget({ id: neighbour.id, field: 'title', caret: 'end' });
     };
 
     const moveLine = (from, to, { instant = false } = {}) => {
@@ -272,8 +272,8 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
     const isPlainEnter = (e) => e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey;
 
     const isBlankLine = (item) =>
-        item.description === '' &&
-        String(item.detail ?? '') === '' &&
+        item.title === '' &&
+        String(item.description ?? '') === '' &&
         String(item.qty ?? '') === '' &&
         String(item.rate ?? '') === '' &&
         String(item.amount ?? '') === '';
@@ -312,7 +312,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
         if (nudge(e, index)) return;
         if (!isPlainEnter(e)) return;
 
-        const order = withQty ? ['description', 'qty', 'rate'] : ['description', 'amount'];
+        const order = withQty ? ['title', 'qty', 'rate'] : ['title', 'amount'];
         const at = order.indexOf(field);
         e.preventDefault();
         if (at > -1 && at < order.length - 1) {
@@ -322,11 +322,11 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
         }
     };
 
-    const onDescriptionKey = (e, item, index) => {
+    const onTitleKey = (e, item, index) => {
         // Backspace on a line that holds nothing removes it, like a list editor.
         if (
             e.key === 'Backspace' &&
-            item.description === '' &&
+            item.title === '' &&
             String(item.amount ?? '') === '' &&
             String(item.qty ?? '') === '' &&
             String(item.rate ?? '') === '' &&
@@ -336,7 +336,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
             removeLine(item.id);
             return;
         }
-        onFieldKey(e, item, index, 'description');
+        onFieldKey(e, item, index, 'title');
     };
 
     // ⌘/Ctrl+Enter adds a line from anywhere in the editor.
@@ -348,7 +348,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
             e.preventDefault();
             // Same guard as Enter: never stack a second blank line on a first.
             const last = items[items.length - 1];
-            if (last && isBlankLine(last)) setFocusTarget({ id: last.id, field: 'description' });
+            if (last && isBlankLine(last)) setFocusTarget({ id: last.id, field: 'title' });
             else addLineAt(items.length);
         };
         window.addEventListener('keydown', onKey);
@@ -429,6 +429,24 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
                     <span data-print className="mt-1 tabular-nums">
                         {formatDate(invoice.date)}
                     </span>
+
+                    {options.dueDate && (
+                        <>
+                            <div className="label mt-3">Due</div>
+                            <input
+                                type="date"
+                                data-chrome
+                                className="field mt-1 text-left sm:text-right"
+                                value={invoice.dueDate || ''}
+                                min={invoice.date}
+                                aria-label="Due date"
+                                onChange={(e) => onChange({ dueDate: e.target.value })}
+                            />
+                            <span data-print className="mt-1 tabular-nums">
+                                {formatDate(invoice.dueDate)}
+                            </span>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -461,7 +479,7 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
             {/* Line items --------------------------------------------------- */}
             <div className="mt-5 flex items-center gap-3 pb-2 text-[10px] tracking-[0.16em] text-mute uppercase">
                 <span className="w-6">#</span>
-                <span className="flex-1">Description</span>
+                <span className="flex-1">Item Details</span>
                 {withQty && <span className="hidden w-14 text-right sm:block">Qty</span>}
                 {withQty && <span className="hidden w-24 text-right sm:block">Price</span>}
                 <span className="hidden w-28 text-right sm:block">Amount</span>
@@ -503,27 +521,32 @@ export default function InvoiceCard({ invoice, onChange, cardRef }) {
                                 </button>
                             </div>
 
-                            {/* Description column, with the optional detail underneath. */}
+                            {/* The item: a title, and under it the description when
+                                that column is switched on. The two are weighted
+                                differently so the line reads as one thing with a note
+                                rather than two competing lines. */}
                             <div className="min-w-0 flex-1">
-                                {/* A textarea, not an input: a long description has to wrap
+                                {/* A textarea, not an input: a long title has to wrap
                                     rather than scroll out of sight — an input clips it on
                                     screen and in the export alike. Enter still walks to the
                                     next field; Shift+Enter breaks the line. */}
                                 <AutoTextarea
-                                    inputRef={register(`${item.id}:description`)}
-                                    value={item.description}
-                                    placeholder="Description"
-                                    aria-label={`Line ${idx + 1} description`}
-                                    onChange={(v) => setItem(item.id, { description: v }, 'description')}
-                                    onKeyDown={(e) => onDescriptionKey(e, item, idx)}
+                                    className="font-medium"
+                                    inputRef={register(`${item.id}:title`)}
+                                    value={item.title}
+                                    placeholder="Title"
+                                    aria-label={`Line ${idx + 1} title`}
+                                    onChange={(v) => setItem(item.id, { title: v }, 'title')}
+                                    onKeyDown={(e) => onTitleKey(e, item, idx)}
                                 />
-                                {options.itemDetail && (
+                                {options.itemDescription && (
                                     <AutoTextarea
-                                        inputRef={register(`${item.id}:detail`)}
-                                        value={item.detail ?? ''}
-                                        placeholder="Add a description…"
-                                        aria-label={`Line ${idx + 1} detail`}
-                                        onChange={(v) => setItem(item.id, { detail: v }, 'detail')}
+                                        className="mt-0.5 text-[12.5px] leading-relaxed text-mute"
+                                        inputRef={register(`${item.id}:description`)}
+                                        value={item.description ?? ''}
+                                        placeholder="Description"
+                                        aria-label={`Line ${idx + 1} description`}
+                                        onChange={(v) => setItem(item.id, { description: v }, 'description')}
                                     />
                                 )}
                             </div>

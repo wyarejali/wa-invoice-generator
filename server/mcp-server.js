@@ -19,7 +19,7 @@ import { z } from 'zod'
 import { createClient } from '@supabase/supabase-js'
 // The app's own money rules, so a total reported here can never drift from the
 // one shown on the invoice.
-import { computeTotals, normalizeInvoice } from '../src/lib/invoice.js'
+import { computeTotals, normalizeInvoice, statusPatch } from '../src/lib/invoice.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 
@@ -430,7 +430,16 @@ function buildServer({ user, db }) {
         date: z.string().optional().describe('ISO date, YYYY-MM-DD. Defaults to today.'),
         status: z.enum(['draft', 'unpaid', 'sent', 'paid']).optional(),
         items: z
-          .array(z.object({ description: z.string(), amount: z.union([z.number(), z.string()]) }))
+          .array(
+            z.object({
+              title: z.string().optional().describe('The line, e.g. "Brand identity".'),
+              description: z
+                .string()
+                .optional()
+                .describe('An optional longer note shown under the title.'),
+              amount: z.union([z.number(), z.string()]),
+            }),
+          )
           .optional()
           .describe('Line items.'),
         note: z.string().optional().describe('Footer note.'),
@@ -452,27 +461,32 @@ function buildServer({ user, db }) {
 
       const now = new Date().toISOString()
       const id = crypto.randomUUID()
-      const invoice = {
+
+      // Built through the app's own normalizer rather than by hand: a shape
+      // maintained in two places drifts, and this copy had already fallen
+      // behind on the template, the options and the lifecycle dates.
+      const items = (input.items?.length ? input.items : [{}]).map((i) => ({
+        // `title` was once called `description`, and a client may still send
+        // only that.
+        title: i.title ?? i.description ?? '',
+        description: i.title ? (i.description ?? '') : '',
+        amount: String(i.amount ?? ''),
+      }))
+
+      const invoice = normalizeInvoice({
         id,
         number,
         date,
         status: input.status || 'draft',
-        items: (input.items?.length ? input.items : [{ description: '', amount: '' }]).map((i) => ({
-          id: crypto.randomUUID(),
-          description: i.description ?? '',
-          amount: String(i.amount ?? ''),
-        })),
-        previousBalance: { enabled: false, label: 'Previous balance', amount: '' },
-        adjustments: {
-          discount: { enabled: false, label: 'Discount', amount: '', sign: -1 },
-          tax: { enabled: false, label: 'Tax', amount: '', sign: 1 },
-          fee: { enabled: false, label: 'Fee', amount: '', sign: 1 },
-        },
-        note: input.note ?? 'Thank you for your business.',
-        terms: input.terms ?? 'DUE ON RECEIPT',
+        items,
+        // No point storing a description the document is not set to show.
+        options: { itemDescription: items.some((i) => i.description !== '') },
+        note: input.note,
+        terms: input.terms,
         createdAt: now,
         updatedAt: now,
-      }
+      })
+      Object.assign(invoice, statusPatch(invoice, invoice.status))
 
       const { error } = await db.from('invoices').insert({
         id,

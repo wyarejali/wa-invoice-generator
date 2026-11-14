@@ -275,6 +275,71 @@
     border-color: var(--color-accent);
   }
 
+  /* A select that matches the inputs but sizes itself to its label, for the
+     dashboard's period picker. The chevron is drawn by an Icon beside it. */
+  .ui-select {
+    appearance: none;
+    width: auto;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    color: var(--color-fg);
+    border-radius: var(--radius-ui);
+    padding: 6px 27px 6px 10px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .ui-select:hover {
+    border-color: var(--color-line-strong);
+  }
+  .ui-select:focus {
+    border-color: var(--color-accent);
+    outline: none;
+  }
+
+  /* Date field for the custom range: content-width, unlike .ui-input. */
+  .ui-date {
+    width: auto;
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
+    color: var(--color-fg);
+    border-radius: var(--radius-ui);
+    padding: 5px 8px;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui-date:focus {
+    border-color: var(--color-accent);
+    outline: none;
+  }
+
+  /* Row in the navigation rail. */
+  .ui-nav {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 9px;
+    border-radius: var(--radius-ui);
+    padding: 6px 8px;
+    font-size: 13px;
+    color: var(--color-fg-muted);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ui-nav:hover:not(:disabled) {
+    background: var(--color-raised);
+    color: var(--color-fg);
+  }
+  .ui-nav[data-on="true"] {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+  .ui-nav:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
   /* Pill used for row toggles and filters. */
   .ui-chip {
     display: inline-flex;

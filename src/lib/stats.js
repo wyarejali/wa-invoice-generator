@@ -190,3 +190,207 @@ export function recentlyTouched(invoices, limit = 6) {
     .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
     .slice(0, limit)
 }
+
+/* ------------------------------------------------------------------------- *
+ * Periods
+ *
+ * Every figure on the dashboard is either a stock — true right now, like what
+ * is outstanding — or a flow, true over a span of time, like what came in.
+ * Stocks ignore the period; flows are measured against one of these.
+ * ------------------------------------------------------------------------- */
+
+export const PERIODS = [
+  { id: 'month', label: 'This month' },
+  { id: 'last-month', label: 'Last month' },
+  { id: 'quarter', label: 'This quarter' },
+  { id: 'year', label: 'This year' },
+  { id: 'last-year', label: 'Last year' },
+  { id: 'all', label: 'All time' },
+  { id: 'custom', label: 'Custom range' },
+]
+
+const pad = (n) => String(n).padStart(2, '0')
+const iso = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`
+
+/** Days in month `m` (1-based) of year `y`. Day 0 of the next month. */
+const lastDay = (y, m) => new Date(y, m, 0).getDate()
+
+function monthName(y, m) {
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+}
+
+/** Whole calendar months from `from` to `to`, inclusive of both ends. */
+export function monthsSpan(from, to) {
+  if (!from || !to) return 0
+  const [fy, fm] = String(from).slice(0, 7).split('-').map(Number)
+  const [ty, tm] = String(to).slice(0, 7).split('-').map(Number)
+  return (ty - fy) * 12 + (tm - fm) + 1
+}
+
+function inRange(day, from, to) {
+  if (!day) return false
+  const d = String(day).slice(0, 10)
+  if (from && d < from) return false
+  if (to && d > to) return false
+  return true
+}
+
+/**
+ * Resolve a period id into the days it covers.
+ *
+ * `from`/`to` are inclusive ISO days, and either may be null, which means
+ * unbounded — that is what "all time" is. `open` marks a period that has not
+ * finished yet, which is what makes a comparison with the one before it unfair
+ * unless the comparison is cut to the same length.
+ */
+export function periodRange(id, today = todayISO(), custom = {}) {
+  const [y, m] = today.split('-').map(Number)
+  const make = (from, to, label) => ({ id, from, to, label, open: !to || to >= today })
+
+  switch (id) {
+    case 'month':
+      return make(iso(y, m, 1), iso(y, m, lastDay(y, m)), monthName(y, m))
+    case 'last-month': {
+      const d = new Date(y, m - 2, 1)
+      const [yy, mm] = [d.getFullYear(), d.getMonth() + 1]
+      return make(iso(yy, mm, 1), iso(yy, mm, lastDay(yy, mm)), monthName(yy, mm))
+    }
+    case 'quarter': {
+      const q = Math.floor((m - 1) / 3)
+      const end = q * 3 + 3
+      return make(iso(y, q * 3 + 1, 1), iso(y, end, lastDay(y, end)), `Q${q + 1} ${y}`)
+    }
+    case 'year':
+      return make(iso(y, 1, 1), iso(y, 12, 31), String(y))
+    case 'last-year':
+      return make(iso(y - 1, 1, 1), iso(y - 1, 12, 31), String(y - 1))
+    case 'custom': {
+      let { from = '', to = '' } = custom
+      // Picked back to front is a slip, not an empty range.
+      if (from && to && from > to) [from, to] = [to, from]
+      return make(from || null, to || null, 'Custom range')
+    }
+    default:
+      return make(null, null, 'All time')
+  }
+}
+
+function shiftMonths(from, to, n) {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  const f = new Date(fy, fm - 1 - n, 1)
+  const t = new Date(ty, tm - 1 - n, 1)
+  const [y2, m2] = [t.getFullYear(), t.getMonth() + 1]
+  return { from: iso(f.getFullYear(), f.getMonth() + 1, 1), to: iso(y2, m2, lastDay(y2, m2)) }
+}
+
+/**
+ * The span immediately before `range`, for the comparison figure.
+ *
+ * Month-aligned periods step back by whole months — comparing November with
+ * "the 30 days before" would spill into October's last day and double-count
+ * it. A custom range has no calendar meaning, so it steps back by its own
+ * length in days. All time has nothing before it.
+ */
+export function previousRange(range) {
+  if (!range.from || !range.to) return null
+  switch (range.id) {
+    case 'month':
+    case 'last-month':
+    case 'quarter':
+    case 'year':
+    case 'last-year': {
+      const span = monthsSpan(range.from, range.to)
+      return { ...range, ...shiftMonths(range.from, range.to, span), label: 'the period before' }
+    }
+    case 'custom': {
+      const days = (daysBetween(range.from, range.to) ?? 0) + 1
+      return {
+        ...range,
+        from: shiftDays(range.from, -days),
+        to: shiftDays(range.to, -days),
+        label: 'the period before',
+      }
+    }
+    default:
+      return null
+  }
+}
+
+function tally(list) {
+  return { amount: sum(list), count: list.length }
+}
+
+/** Invoices dated inside a period — the basis for the per-period breakdowns. */
+export function invoicesIn(invoices, range) {
+  if (!range.from && !range.to) return invoices
+  return invoices.filter((i) => inRange(i.date, range.from, range.to))
+}
+
+/**
+ * What happened inside one span of time.
+ *
+ * `billed` reads the invoice date and `collected` reads `paidAt`, so an
+ * invoice raised in one month and paid in the next counts once in each — which
+ * is the point. Drafts are kept apart from billed: nothing has been charged
+ * for until the invoice leaves the drawer.
+ */
+export function periodTotals(invoices, range) {
+  const within = (day) => (!range.from && !range.to ? Boolean(day) : inRange(day, range.from, range.to))
+  const billed = invoices.filter((i) => i.status !== 'draft' && within(i.date))
+  const collected = invoices.filter((i) => i.status === 'paid' && i.paidAt && within(i.paidAt))
+  const drafted = invoices.filter((i) => i.status === 'draft' && within(i.date))
+  const open = invoices.filter((i) => OPEN.includes(i.status) && within(i.date))
+
+  return {
+    billed: tally(billed),
+    collected: tally(collected),
+    drafted: tally(drafted),
+    open: tally(open),
+    lists: { billed, collected, drafted, open },
+  }
+}
+
+/**
+ * The grand total card: one period's money, and whether it beats the last one.
+ *
+ * A period still running is compared against the same number of days into the
+ * period before, not against the whole of it — November's first fortnight
+ * against October's first fortnight. Comparing a fortnight with a full month
+ * reads as a collapse in revenue every time a month turns over.
+ */
+export function revenue(invoices, periodId = 'year', today = todayISO(), custom = {}) {
+  const range = periodRange(periodId, today, custom)
+  const current = periodTotals(invoices, range)
+  const prev = previousRange(range)
+
+  let previous = null
+  let change = null
+  let partial = false
+
+  if (prev) {
+    const end = range.to && range.to > today ? today : range.to
+    const elapsed = daysBetween(range.from, end)
+    // Cut the earlier window to the part of it that had run by this point.
+    if (range.open && elapsed !== null) {
+      const cut = shiftDays(prev.from, elapsed)
+      if (cut < prev.to) {
+        prev.to = cut
+        partial = true
+      }
+    }
+    previous = periodTotals(invoices, prev)
+    const now = current.collected.amount
+    const was = previous.collected.amount
+    // No money last time is not a 0% change, and dividing by it says ∞.
+    change = was > 0 ? (now - was) / was : null
+  }
+
+  return {
+    range,
+    ...current,
+    previous: previous ? { ...previous, range: prev, partial } : null,
+    change,
+    average: current.billed.count ? current.billed.amount / current.billed.count : 0,
+  }
+}

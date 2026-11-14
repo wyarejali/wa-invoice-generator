@@ -139,7 +139,9 @@ export default function Header({
       <button
         type="button"
         className="ui-icon-btn"
-        aria-label={isDesktop ? (railOpen ? 'Hide invoice list' : 'Show invoice list') : 'Open invoice list'}
+        aria-label={`${isDesktop ? (railOpen ? 'Hide' : 'Show') : 'Open'} ${
+          isDashboard ? 'menu' : 'invoice list'
+        }`}
         aria-expanded={isDesktop ? railOpen : undefined}
         onClick={onToggleRail}
       >

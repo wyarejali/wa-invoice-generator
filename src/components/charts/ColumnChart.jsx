@@ -29,7 +29,11 @@ export default function ColumnChart({ data, series, format, height = 150, onHove
         {data.map((row, index) => (
           <div
             key={row.key}
-            className="group flex h-full flex-1 cursor-default flex-col justify-end"
+            className={`group flex h-full flex-1 cursor-default flex-col justify-end ${
+              // Outside the selected period: still drawn, so the trend stays
+              // readable, but not competing with the part being asked about.
+              row.dim ? 'opacity-35' : ''
+            }`}
             onMouseEnter={() => hover(index)}
             onMouseLeave={() => hover(null)}
             onFocus={() => hover(index)}
@@ -67,7 +71,7 @@ export default function ColumnChart({ data, series, format, height = 150, onHove
             key={row.key}
             className={`flex-1 text-center text-[10px] ${
               active === index ? 'text-fg' : 'text-fg-subtle'
-            }`}
+            } ${row.dim ? 'opacity-50' : ''}`}
           >
             {row.label}
           </div>

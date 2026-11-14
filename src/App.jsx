@@ -3,8 +3,8 @@ import { Navigate, Route, BrowserRouter as Router, Routes, useNavigate, useParam
 import { InvoicesProvider, useInvoices } from './context/InvoicesContext';
 import { ConfirmProvider, useConfirm } from './components/ui/ConfirmProvider';
 import { ToastProvider, useToast } from './components/ui/ToastProvider';
-import { nextStatus, statusPatch } from './lib/invoice';
-import { downloadJSON, readJSONFile } from './lib/storage';
+import { isOverdue, nextStatus, statusPatch } from './lib/invoice';
+import { downloadCSV, downloadJSON, readJSONFile } from './lib/storage';
 import { MOD, isTypingTarget } from './lib/shortcuts';
 import { useAppearance } from './lib/theme';
 import CommandPalette from './components/CommandPalette';
@@ -13,6 +13,7 @@ import Header from './components/Header';
 import Icon from './components/ui/Icon';
 import InvoiceEditor from './components/InvoiceEditor';
 import LandingPage from './components/LandingPage';
+import NavRail from './components/NavRail';
 import PropertiesPanel from './components/PropertiesPanel';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import Sidebar from './components/Sidebar';
@@ -155,6 +156,31 @@ function Shell({ view }) {
         },
         [navigate, closeDrawers],
     );
+
+    /**
+     * The nav rail's ways into the list: pick a status, land on the first
+     * invoice that has it with the list already filtered to match. Jumping to
+     * the list without applying the filter would make the rail decorative.
+     */
+    const openFilter = useCallback(
+        (key) => {
+            setFilter(key);
+            setQuery('');
+            const match = invoices.find((i) => (key === 'overdue' ? isOverdue(i) : i.status === key));
+            if (match) navigate(`/i/${match.id}`);
+            setRailOpen(isDesktop);
+            if (!isDesktop) setPanelOpen(false);
+        },
+        [invoices, navigate, isDesktop],
+    );
+
+    const openList = useCallback(() => {
+        setFilter('all');
+        setQuery('');
+        const target = active?.id || invoices[0]?.id;
+        if (target) navigate(`/i/${target}`);
+        setRailOpen(isDesktop);
+    }, [active, invoices, navigate, isDesktop]);
 
     const patchActive = useCallback(
         (patch, options) => active && updateInvoice(active.id, patch, options),
@@ -342,6 +368,27 @@ function Shell({ view }) {
         />
     );
 
+    // The dashboard is already about every invoice at once, so its rail
+    // carries the account and the menus instead of the list.
+    const rail = isDashboard ? (
+        <NavRail
+            onClose={() => setRailOpen(false)}
+            onNew={handleNew}
+            onOpenList={openList}
+            onFilter={openFilter}
+            onImport={() => fileRef.current?.click()}
+            onExportJSON={() => downloadJSON(invoices, 'invoices.json')}
+            onExportCSV={() => {
+                downloadCSV(invoices);
+                toast({ title: `Exported ${invoices.length} rows as CSV` });
+            }}
+            onShortcuts={() => setShortcutsOpen(true)}
+            appearance={appearance}
+        />
+    ) : (
+        sidebar
+    );
+
     const panel =
         !isDashboard && active ? (
             <PropertiesPanel
@@ -380,7 +427,7 @@ function Shell({ view }) {
             />
 
             <div className="flex min-h-0 flex-1">
-                {isDesktop && railOpen && <aside className="w-[290px] shrink-0 border-r border-line">{sidebar}</aside>}
+                {isDesktop && railOpen && <aside className="w-[290px] shrink-0 border-r border-line">{rail}</aside>}
 
                 <main className="scroll-thin min-h-0 flex-1 overflow-y-auto bg-bg">
                     {isDashboard ? (
@@ -418,7 +465,7 @@ function Shell({ view }) {
                     <button type="button" aria-label="Close panel" className="ui-overlay" onClick={closeDrawers} />
                     {railOpen && (
                         <div className="absolute inset-y-0 left-0 w-[88%] max-w-[330px] border-r border-line bg-surface">
-                            {sidebar}
+                            {rail}
                         </div>
                     )}
                     {panelOpen && panel && (

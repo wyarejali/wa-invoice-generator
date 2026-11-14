@@ -34,9 +34,22 @@ and `vite preview` already do it.
 
 ## Layout
 
-A top header, an invoice list rail on the left, the document in the middle, and
-a properties panel on the right. The rail and the panel each toggle from the
-header, so the document can have the full width when you want it.
+A top header, a rail on the left, the document in the middle, and a properties
+panel on the right. The rail and the panel each toggle from the header, so the
+document can have the full width when you want it.
+
+What the rail holds depends on the view. In the editor it is the invoice list,
+because that is what you move between while writing one. On the dashboard
+there is nothing to move between — the page is already about every invoice at
+once — so the same space carries the account card, the menus, the status
+filters with their counts, the archive actions and the appearance controls
+(`NavRail`). Picking a status there lands you on the first invoice with it,
+with the list already filtered to match; jumping to the list without applying
+the filter would make the rail decorative.
+
+Appearance lives in the nav rail as well as the properties panel: the
+dashboard has no properties panel, and the theme switch was otherwise
+reachable only from the command palette.
 
 Below `lg` both side panels become drawers — the list slides in from the left,
 the properties panel from the right. Only one copy of each is ever mounted (a
@@ -79,23 +92,58 @@ on every invoice a person writes — but never the client.
 
 ## Dashboard
 
-Four figures, then the charts. Outstanding and drafts are stocks — what is
-true right now. Collected is a flow, so it is measured over 30 days and
-compared with the 30 before it, which is the only way one number says whether
-things are improving.
+Every figure on the page is one of two kinds, and the page says which:
 
-| Card | Reads |
+- a **stock** — true at this moment, like what is outstanding. Stocks ignore
+  the period picker and sit under an "As of today" heading.
+- a **flow** — true over a span of time, like what came in. Flows follow the
+  period.
+
+### Grand total
+
+The card at the top is the page's reason to exist: revenue collected over a
+period, with the period's supporting numbers around it.
+
+| Control | |
 | --- | --- |
-| Billed against collected | 12 months. Billed by invoice date, collected by payment date — the gap between the bars is the lag. |
-| Status | Count and value per status. Overdue is deliberately absent: it is drawn from unpaid and sent, so it would count the same money twice. |
-| Waiting on payment | Open invoices, oldest first, each with a one-click **Mark paid**. |
-| How long they have waited | Aged into buckets from the due date, or the invoice date where there is none. |
-| Top clients | Grouped by client name. Only the business layout records one, so everything else lands in "No client recorded" rather than being dropped. |
-| Recent activity | Last six touched. |
+| Presets | This month, last month, this quarter, this year, last year, all time |
+| Custom range | Two dates. Picked back to front, they are swapped rather than read as an empty range. |
+
+The choice is kept in `localStorage` — the period someone works in is a
+standing preference, not a per-visit one.
+
+The headline counts **payments by the day they arrived** (`paidAt`), so an
+invoice raised in one month and settled in the next lands in the month the
+money did. Below it, the bar splits the invoices *dated* in the period into
+paid, still open and draft — a different question, which is why the caption
+names it.
+
+A period still running is compared against the same number of days into the
+period before, not against the whole of it: November's first fortnight against
+October's first fortnight. Comparing a fortnight with a full month reads as a
+collapse in revenue every time a month turns over. Month-aligned periods step
+back by whole months, so November's comparison never spills onto October's
+last day and counts it twice. No money in the earlier window leaves the change
+unstated — that is not a 0% change, and dividing by it says ∞.
+
+| Card | Reads | Follows the period |
+| --- | --- | --- |
+| Grand total | Collected by payment date, against billed, open, draft and average. | yes |
+| Billed against collected | A run of months, long enough to cover the period and never shorter than a year. Months outside it are faded, not dropped — the trend is the context. | the window, not the bars |
+| Status | Count and value per status, over the invoices dated in the period. Overdue is deliberately absent: it is drawn from unpaid and sent, so it would count the same money twice. | yes |
+| Top clients | Grouped by client name. Only the business layout records one, so everything else lands in "No client recorded" rather than being dropped. | yes |
+| Outstanding / Collected 30d / In draft / Time to pay | Four tiles under "As of today". | no |
+| Waiting on payment | Open invoices, oldest first, each with a one-click **Mark paid**. | no |
+| How long they have waited | Aged into buckets from the due date, or the invoice date where there is none. | no |
+| Recent activity | Last six touched. | no |
 
 Everything is derived in `src/lib/stats.js` — pure functions over the invoice
 array, so no component knows how a figure is reached and each one can be
 checked on its own.
+
+The grid uses container queries (`@container`, `@3xl:`), not viewport
+breakpoints. The rail takes 290px out of the viewport, so `lg:grid-cols-3`
+gives three columns in the width of two and the cards overflow their cells.
 
 ### Charts without a chart library
 
